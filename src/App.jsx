@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, Clock, MapPin, Users, AlertTriangle, ExternalLink } from 'lucide-react';
 
 const schedule = [
   { id: 'ppt', title: 'PPT Making', start: '09:30', end: '10:00' },
@@ -8,21 +10,28 @@ const schedule = [
 
 export default function App() {
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  // Demo offset allows testing the UI if viewed outside the schedule times
   const [demoOffset, setDemoOffset] = useState(0);
+  const [isStarted, setIsStarted] = useState(false);
 
   useEffect(() => {
+    if (!isStarted) return;
+
+    // Initial sync
+    setCurrentTime(new Date(Date.now() + demoOffset));
+
     const timer = setInterval(() => {
-      // Add the demoOffset to the current time so we can click to forward time
       setCurrentTime(new Date(Date.now() + demoOffset));
     }, 1000);
     return () => clearInterval(timer);
-  }, [demoOffset]);
+  }, [demoOffset, isStarted]);
 
-  // Fast forward by 30 minutes for demo purposes
   const addDemoTime = () => setDemoOffset(prev => prev + 30 * 60 * 1000);
-  const resetDemoTime = () => setDemoOffset(0);
+
+  const resetDemoTime = () => {
+    const startTime = parseTime(schedule[0].start, new Date()).getTime();
+    const nowReal = Date.now();
+    setDemoOffset(startTime - nowReal);
+  };
 
   const parseTime = (timeStr, baseDate) => {
     const [hours, minutes] = timeStr.split(':').map(Number);
@@ -31,6 +40,8 @@ export default function App() {
     return date;
   };
 
+  const now = currentTime.getTime();
+
   let activeIndex = -1;
   let nextIndex = 0;
   let status = 'upcoming'; // upcoming, active, break, ended
@@ -38,8 +49,6 @@ export default function App() {
   let remainingMs = 0;
   let blockStart = null;
   let blockEnd = null;
-
-  const now = currentTime.getTime();
 
   for (let i = 0; i < schedule.length; i++) {
     const start = parseTime(schedule[i].start, currentTime).getTime();
@@ -59,7 +68,7 @@ export default function App() {
       remainingMs = start - now;
       status = i === 0 ? 'upcoming' : 'break';
       activeIndex = i - 1;
-      blockStart = now;
+      blockStart = i === 0 ? null : parseTime(schedule[i - 1].end, currentTime).getTime();
       blockEnd = start;
       break;
     }
@@ -72,101 +81,122 @@ export default function App() {
     remainingMs = 0;
   }
 
-  const formatTime = (ms) => {
-    if (ms <= 0) return '00:00:00';
+  const getTimeComponents = (ms) => {
+    if (ms <= 0) return { h: '00', m: '00', s: '00' };
     const totalSeconds = Math.floor(ms / 1000);
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
-
-    if (h > 0) {
-      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return {
+      h: h.toString().padStart(2, '0'),
+      m: m.toString().padStart(2, '0'),
+      s: s.toString().padStart(2, '0')
+    };
   };
 
-  const isLowTimeAlert = remainingMs > 0 && remainingMs <= 2 * 60 * 1000 && status === 'active';
+  const isLowTimeAlert = remainingMs > 0 && remainingMs <= 5 * 60 * 1000 && status === 'active';
 
-  const getTimerLabel = () => {
-    if (status === 'upcoming') return `STARTING SOON: ${schedule[0].title.toUpperCase()}`;
-    if (status === 'active') return `${schedule[activeIndex].title.toUpperCase()} IN PROGRESS`;
-    if (status === 'break') return `INTERMISSION: UP NEXT ${schedule[nextIndex].title.toUpperCase()}`;
-    if (status === 'ended') return 'EVENT CONCLUDED';
-    return '';
+  const getTimerSublabel = () => {
+    if (!isStarted) return "EVENT STARTS IN";
+    if (status === 'upcoming') return "EVENT STARTS IN";
+    if (status === 'active') return "SESSION ENDS IN";
+    if (status === 'break') return "NEXT SESSION IN";
+    if (status === 'ended') return "EVENT CONCLUDED";
+    return "";
+  };
+
+  const getActiveTitle = () => {
+    if (!isStarted) return "START LINE";
+    if (status === 'upcoming') return schedule[0].title;
+    if (status === 'active') return schedule[activeIndex].title;
+    if (status === 'break') return `BREAK: ${schedule[nextIndex].title} NEXT`;
+    if (status === 'ended') return "FINISH LINE";
+    return "";
+  };
+
+  const skipToLowTime = () => {
+    const sessionEnd = parseTime(schedule[0].end, new Date()).getTime();
+    const nowReal = Date.now();
+    // Set offset so there's only 1 minute remaining in the first session
+    setDemoOffset(sessionEnd - nowReal - (60 * 1000));
+    setIsStarted(true);
   };
 
   const calculateOverallProgress = () => {
+    if (!isStarted) return 0;
     if (status === 'upcoming') return 0;
     if (status === 'ended') return 100;
 
-    const maxMilestones = schedule.length - 1;
-    const baseProgress = Math.max(0, activeIndex) * (100 / maxMilestones);
+    const t0 = parseTime(schedule[0].start, currentTime).getTime();
+    const t1 = parseTime(schedule[1].start, currentTime).getTime();
+    const t2 = parseTime(schedule[2].start, currentTime).getTime();
+    const tEnd = parseTime(schedule[2].end, currentTime).getTime();
 
-    if (status === 'active' && blockStart && blockEnd) {
-      const segmentProgress = ((now - blockStart) / (blockEnd - blockStart)) * (100 / maxMilestones);
-      return Math.min(100, baseProgress + segmentProgress);
+    // Map time into 2 segments
+    if (now < t1) {
+      const segmentTime = t1 - t0;
+      const elapsed = Math.max(0, now - t0);
+      return (elapsed / segmentTime) * 50;
+    } else {
+      const segmentTime = tEnd - t1;
+      const elapsed = Math.max(0, now - t1);
+      return 50 + (elapsed / segmentTime) * 50;
     }
-    return Math.min(100, baseProgress);
   };
 
-  const overallProgressWidth = calculateOverallProgress();
+  const progress = calculateOverallProgress();
+  const time = getTimeComponents(remainingMs);
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 relative z-0 bg-black font-mono">
-      <div className="bg-mesh"></div>
+    <div className="min-h-screen w-full flex flex-col items-center justify-center py-12 px-6 relative overflow-hidden">
+      {/* Background Glow */}
+      <div className="absolute inset-0 bg-radial-gradient pointer-events-none"></div>
 
-      {/* Demo Controls (Invisible until hover or small dev tools) */}
-      <div className="absolute top-4 right-4 flex gap-2 opacity-10 hover:opacity-100 transition-opacity z-50">
-        <button onClick={resetDemoTime} className="bg-white/10 text-xs px-3 py-1 text-white border border-white/20 rounded hover:bg-white/20">Reset Time</button>
-        <button onClick={addDemoTime} className="bg-white/10 text-xs px-3 py-1 text-white border border-white/20 rounded hover:bg-white/20">+30m</button>
-      </div>
+      <div className="w-full max-w-5xl flex flex-col items-center z-10">
 
-      <div className="w-full max-w-4xl flex flex-col gap-16 items-center">
-
-        {/* Milestone Bar */}
-        <div className="w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-[0_0_30px_rgba(255,255,255,0.05)] relative pt-12 mt-10">
-
-          <div className="absolute top-6 left-16 right-16 h-1 z-0 -translate-y-[2px]">
-            <div className="w-full h-full bg-white/10 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400 transition-all duration-1000 ease-linear shadow-[0_0_10px_rgba(34,211,238,0.8)]"
-                style={{ width: `${overallProgressWidth}%` }}
-              />
-            </div>
+        {/* Horizontal Timeline Bar */}
+        <div className="w-full max-w-5xl relative mb-36 px-12">
+          {/* Track (Strictly Transparent Background) */}
+          <div className="absolute top-1/2 -translate-y-1/2 left-12 right-12 h-1 bg-transparent rounded-full overflow-visible">
+            <motion.div
+              className="h-full bg-[#5EEAD4] shadow-[0_0_15px_rgba(94,234,212,1)] rounded-full relative"
+              style={{ width: `${progress}%` }}
+              transition={{ ease: "linear", duration: 0.5 }}
+            >
+              {/* Tip Glow */}
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-[#5EEAD4] rounded-full blur-md opacity-50" />
+            </motion.div>
           </div>
 
-          <div className="flex items-center justify-between relative z-10 w-full -mt-6">
-            {schedule.map((milestone, i) => {
-              const baseCompleted = status === 'ended' || (status === 'active' ? i < activeIndex : i <= activeIndex);
-              const isCurrent = i === activeIndex && status === 'active';
+          {/* Nodes & Labels */}
+          <div className="flex justify-between relative w-full">
+            {schedule.map((item, i) => {
+              const isCompleted = isStarted && (status === 'ended' || (status === 'active' ? i < activeIndex : i <= activeIndex));
+              const isActive = isStarted && ((i === activeIndex && status === 'active') || (status === 'break' && i === nextIndex));
 
               return (
-                <div key={milestone.id} className="relative flex flex-col items-center gap-4 w-32 border-none">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-500 relative bg-black
-                    ${baseCompleted ? 'border-cyan-400 text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.6)]' :
-                      isCurrent ? 'border-purple-500 text-purple-400' :
-                        'border-white/20 text-white/50'}`
-                  }>
-                    {baseCompleted ? (
-                      <svg className="w-6 h-6 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
-                    ) : (
-                      <span className="font-bold text-lg">{i + 1}</span>
-                    )}
-                    {isCurrent && (
-                      <div className="absolute inset-0 rounded-full bg-purple-500/30 shadow-[0_0_25px_rgba(168,85,247,0.8)] animate-pulse" />
-                    )}
+                <div key={item.id} className="flex flex-col items-center">
+                  {/* Node Circle */}
+                  <div className="relative mb-6">
+                    <motion.div
+                      className={`w-12 h-12 md:w-16 md:h-16 rounded-full border z-20 flex items-center justify-center transition-all duration-500 relative
+                        ${isCompleted ? 'bg-[#5EEAD4] border-[#5EEAD4] text-[#0b0f10] shadow-[0_0_20px_rgba(94,234,212,0.6)]' :
+                          isActive ? 'active-round bg-[#0b0f10] text-[#5EEAD4]' :
+                            'bg-[#0b0f10] border-white/10 text-white/10'}`}
+                    >
+                      {isCompleted ? <Check size={28} strokeWidth={4} /> : <span className="text-sm font-black">{i + 1}</span>}
+                    </motion.div>
                   </div>
 
+                  {/* Labels (Now in flow, not absolute) */}
                   <div className="flex flex-col items-center text-center">
-                    <div className={`text-sm font-bold tracking-wider transition-colors duration-300 ${baseCompleted ? 'text-cyan-400 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' :
-                        isCurrent ? 'text-purple-400 drop-shadow-[0_0_5px_rgba(168,85,247,0.8)]' :
-                          'text-white/40'
-                      }`}>
-                      {milestone.title}
-                    </div>
-                    <div className={`text-xs mt-1 tracking-wider ${isCurrent ? 'text-white/60' : 'text-white/30'}`}>
-                      {milestone.start} - {milestone.end}
-                    </div>
+                    <span className={`text-[10px] md:text-xs font-black tracking-[0.2em] uppercase mb-1.5
+                      ${isCompleted ? 'text-[#5EEAD4]' : isActive ? 'text-[#5EEAD4]' : 'text-white/20'}`}>
+                      {item.title}
+                    </span>
+                    <span className="text-[9px] md:text-[10px] text-white/10 tracking-widest font-bold">
+                      {item.start} - {item.end}
+                    </span>
                   </div>
                 </div>
               );
@@ -174,39 +204,142 @@ export default function App() {
           </div>
         </div>
 
-        {/* The Main Timer Card */}
-        <div className="relative group w-full sm:w-auto">
-          <div className={`absolute -inset-1 rounded-3xl blur-2xl opacity-40 transition-all duration-1000 z-0
-            ${isLowTimeAlert ? 'bg-red-600 animate-pulse' :
-              status === 'active' ? 'bg-gradient-to-r from-blue-600 to-purple-600 group-hover:opacity-70 group-hover:duration-200' :
-                'bg-white/10'}`}
-          ></div>
+        {/* Status Header */}
+        <motion.div
+          key={getTimerSublabel()}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mb-8"
+        >
+          <h2 className="text-[#5EEAD4] text-xs md:text-sm tracking-[0.4em] font-bold uppercase drop-shadow-[0_0_10px_rgba(94,234,212,0.3)]">
+            {getTimerSublabel()}
+          </h2>
+        </motion.div>
 
-          <div className="relative z-10 bg-black/50 backdrop-blur-2xl border border-white/10 p-10 sm:p-20 rounded-3xl flex flex-col items-center justify-center gap-8 shadow-2xl">
-            <h2 className={`uppercase tracking-[0.2em] text-sm sm:text-xl font-medium transition-colors duration-500 text-center
-              ${isLowTimeAlert ? 'text-red-400 drop-shadow-[0_0_10px_rgba(255,0,0,0.5)]' : 'text-cyan-300 drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]'}`}>
-              {getTimerLabel()}
-            </h2>
-
-            <div className={`text-6xl sm:text-8xl md:text-[9rem] font-bold tracking-tight transition-all duration-1000 select-none tabular-nums
-              ${isLowTimeAlert ? 'text-red-500 text-glow-red scale-[1.02]' : 'text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.4)]'}`}>
-              {status === 'ended' ? '00:00' : formatTime(remainingMs)}
-            </div>
-
-            {status !== 'ended' && status !== 'upcoming' && blockStart && blockEnd && (
-              <div className="w-full max-w-xs flex flex-col items-center mt-2 gap-3 opacity-80 hover:opacity-100 transition-opacity">
-                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                  <div className={`h-full transition-all duration-1000 ease-linear ${isLowTimeAlert ? 'bg-red-500 shadow-[0_0_8px_rgba(255,0,0,0.8)]' : 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]'}`}
-                    style={{ width: `${((now - blockStart) / (blockEnd - blockStart)) * 100}%` }}
-                  />
-                </div>
-                {status === 'active' && (
-                  <div className="text-[10px] uppercase tracking-widest text-white/40">Section Progress</div>
-                )}
-              </div>
-            )}
-
+        {/* Main Countdown Display */}
+        <div className="flex items-center gap-6 md:gap-12 mb-20 justify-center w-full">
+          {/* Hours Tile */}
+          <div className="flex flex-col items-center">
+            <motion.div
+              layout
+              className={`timer-card ${isLowTimeAlert ? '!border-red-500/50 !shadow-[0_0_25px_rgba(239,68,68,0.3)]' : ''}`}
+            >
+              <span className={`timer-number ${isLowTimeAlert ? '!text-red-500 !shadow-[0_0_15px_rgba(239,68,68,0.4)]' : ''}`}>
+                {time.h}
+              </span>
+              {isLowTimeAlert && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: [0, 0.15, 0] }}
+                  transition={{ repeat: Infinity, duration: 1 }}
+                  className="absolute inset-0 bg-red-500/20"
+                />
+              )}
+            </motion.div>
+            <span className="timer-label">HOURS</span>
           </div>
+
+          <div className="text-2xl md:text-5xl text-[#6EC1C3]/30 font-bold mb-10">:</div>
+
+          {/* Minutes Tile */}
+          <div className="flex flex-col items-center">
+            <motion.div
+              layout
+              className={`timer-card ${isLowTimeAlert ? '!border-red-500/50 !shadow-[0_0_25px_rgba(239,68,68,0.3)]' : ''}`}
+            >
+              <span className={`timer-number ${isLowTimeAlert ? '!text-red-500 !shadow-[0_0_15px_rgba(239,68,68,0.4)]' : ''}`}>
+                {time.m}
+              </span>
+              {isLowTimeAlert && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: [0, 0.15, 0] }}
+                  transition={{ repeat: Infinity, duration: 1 }}
+                  className="absolute inset-0 bg-red-500/20"
+                />
+              )}
+            </motion.div>
+            <span className="timer-label">MINUTES</span>
+          </div>
+
+          <div className="text-2xl md:text-5xl text-[#6EC1C3]/30 font-bold mb-10">:</div>
+
+          {/* Seconds Tile */}
+          <div className="flex flex-col items-center">
+            <motion.div
+              layout
+              className={`timer-card ${isLowTimeAlert ? '!border-red-500/50 !shadow-[0_0_25px_rgba(239,68,68,0.3)]' : ''}`}
+            >
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={time.s}
+                  initial={{ y: 15, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -15, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className={`timer-number ${isLowTimeAlert ? '!text-red-500 !shadow-[0_0_15px_rgba(239,68,68,0.4)]' : ''}`}
+                >
+                  {time.s}
+                </motion.span>
+              </AnimatePresence>
+              {isLowTimeAlert && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: [0, 0.15, 0] }}
+                  transition={{ repeat: Infinity, duration: 1 }}
+                  className="absolute inset-0 bg-red-500/20"
+                />
+              )}
+            </motion.div>
+            <span className="timer-label">SECONDS</span>
+          </div>
+        </div>
+
+        {/* Alerts / Info Badges */}
+        <div className="flex flex-wrap justify-center gap-4 mb-20">
+          {isLowTimeAlert && (
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-[10px] font-bold tracking-widest uppercase"
+            >
+              <AlertTriangle size={12} className="animate-pulse" />
+              CRITICAL: SESSION ENDING
+            </motion.div>
+          )}
+
+          <div className="flex items-center justify-center gap-2 px-6 py-2.5 bg-white/5 border border-white/10 rounded-full text-[12px] font-bold tracking-[0.15em] text-white/70">
+            <Clock size={14} className="text-[#5EEAD4]" />
+            {getActiveTitle()}
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center gap-4">
+          {/* START / PAUSE Button */}
+          <motion.button
+            whileHover={{ scale: 1.05, backgroundColor: isStarted ? '#f87171' : '#78fbda' }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              if (!isStarted && status === 'ended') {
+                resetDemoTime();
+              }
+              setIsStarted(!isStarted);
+            }}
+            className={`px-16 py-4 font-black text-sm md:text-base tracking-[0.4em] rounded-full flex items-center justify-center uppercase transition-colors duration-300 shadow-[0_10px_40px_rgba(94,234,212,0.4)]
+              ${isStarted ? 'bg-white/10 text-white/40 border border-white/5 shadow-none' : 'bg-[#5EEAD4] text-black'}`}
+          >
+            {isStarted ? 'PAUSE' : 'START'}
+          </motion.button>
+
+          {/* Verification Button (DEBUG) */}
+          {!isStarted && (
+            <button
+              onClick={skipToLowTime}
+              className="text-[10px] text-white/10 hover:text-[#5EEAD4]/40 transition-colors uppercase tracking-[0.3em] font-bold"
+            >
+              Verify Alert Mode
+            </button>
+          )}
         </div>
 
       </div>

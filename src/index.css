@@ -1,44 +1,116 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Michroma&family=Orbitron:wght@400;500;600;700;800;900&display=swap');
 
 @theme {
-  --color-primary-cyan: #00ffff;
+  --color-primary-cyan: #5EEAD4;
   --color-primary-white: #ffffff;
-  --color-alert-red: #ff0000;
+  --color-alert-red: #ef4444;
+  --font-orbitron: "Orbitron", sans-serif;
+  --font-michroma: "Michroma", sans-serif;
 }
 
 @layer utilities {
+  .text-glow-cyan {
+    text-shadow: 0 0 10px rgba(94, 234, 212, 0.8), 0 0 20px rgba(94, 234, 212, 0.4);
+  }
+
   .text-glow-red {
-    text-shadow: 0 0 10px rgba(255, 0, 0, 0.8), 0 0 20px rgba(255, 0, 0, 0.5);
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.8), 0 0 20px rgba(239, 68, 68, 0.4);
+  }
+
+  .bg-glass {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 25px rgba(94, 234, 212, 0.2);
+  }
+
+  .active-round {
+    border: 2px solid #5EEAD4 !important;
+    box-shadow: 0 0 40px rgba(94, 234, 212, 0.4);
   }
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #000;
+  background-color: #0b0f10;
+  /* Dark grayish-black from image */
   color: white;
-  font-family: 'JetBrains Mono', 'Roboto Mono', monospace;
+  font-family: 'Michroma', sans-serif;
+  overflow-x: hidden;
+}
+
+.bg-radial-gradient {
+  background: radial-gradient(circle at center, rgba(94, 234, 212, 0.08) 0%, transparent 70%);
+}
+
+.timer-card {
+  position: relative;
+  width: 130px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(110, 193, 195, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
   overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Mesh gradient background */
-.bg-mesh {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: -1;
-  background: 
-    radial-gradient(circle at 15% 50%, rgba(79, 70, 229, 0.15), transparent 25%),
-    radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%);
-  animation: mesh-pulse 10s ease-in-out infinite alternate;
+@media (min-width: 768px) {
+  .timer-card {
+    width: 200px;
+    height: 220px;
+  }
 }
 
-@keyframes mesh-pulse {
-  0% { transform: scale(1); opacity: 0.8; }
-  100% { transform: scale(1.1); opacity: 1; }
+/* The horizontal divider line in the middle */
+.timer-card::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 100%;
+  height: 1px;
+  background: rgba(110, 193, 195, 0.1);
+  transform: translateY(-50%);
+  z-index: 5;
+}
+
+.timer-card:hover {
+  border-color: rgba(110, 193, 195, 0.5);
+  box-shadow: 0 0 40px rgba(110, 193, 195, 0.2);
+}
+
+.timer-number {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+  font-size: 4rem;
+  color: #6EC1C3;
+  text-shadow: 0 0 15px rgba(110, 193, 195, 0.6);
+  z-index: 10;
+  letter-spacing: -0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .timer-number {
+    font-size: 7.5rem;
+  }
+}
+
+.timer-label {
+  margin-top: 1.5rem;
+  font-family: 'Michroma', sans-serif;
+  font-size: 0.8rem;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: rgba(110, 193, 195, 0.4);
+  text-align: center;
+  width: 100%;
 }
